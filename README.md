@@ -58,3 +58,4 @@ ls /dev/cu.usb*
 - **CDCOnBoot=cdc** is required for ESP32-C3 boards with native USB (no separate USB-serial chip)
 - If upload fails with "No serial data received", unplug and replug the USB cable, then try again immediately
 - Max reliable speed for 28BYJ-48 is ~1ms per step (~15 RPM). At 0.5ms it stalls.
+- **Display offset**: This OLED module has an offset - visible area starts around Y=28. Text at Y=0 is not visible.

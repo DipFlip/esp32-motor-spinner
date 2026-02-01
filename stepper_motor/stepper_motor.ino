@@ -33,6 +33,7 @@ const int stepSequence[8][4] = {
 };
 
 int currentStep = 0;
+long totalSteps = 0;
 
 void setStep(int step) {
     digitalWrite(IN1, stepSequence[step][0]);
@@ -49,6 +50,7 @@ void stepMotor(int steps) {
         currentStep += direction;
         if (currentStep > 7) currentStep = 0;
         if (currentStep < 0) currentStep = 7;
+        totalSteps += direction;
 
         setStep(currentStep);
         delayMicroseconds(800); // 0.8ms between steps
@@ -62,17 +64,20 @@ void stopMotor() {
     digitalWrite(IN4, LOW);
 }
 
-void updateDisplay(const char* status, int revolutions) {
+void updateDisplay() {
+    float angle = fmod((totalSteps * 360.0 / STEPS_PER_REV), 360.0);
+    if (angle < 0) angle += 360;
+    long revolutions = totalSteps / STEPS_PER_REV;
+
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
-    display.setCursor(0, 0);
-    display.println("Stepper Motor");
-    display.println("-------------");
-    display.print("Status: ");
-    display.println(status);
-    display.print("Revs: ");
-    display.println(revolutions);
+    display.setCursor(32, 28);
+    display.print("Angle: ");
+    display.print(angle, 1);
+    display.setCursor(32, 40);
+    display.print("Revs:  ");
+    display.print(revolutions);
     display.display();
 }
 
@@ -98,24 +103,19 @@ void setup() {
     display.display();
 
     Serial.println("Stepper motor ready!");
-    Serial.println("Commands: cw, ccw, stop, speed <1-10>");
 
-    updateDisplay("Ready", 0);
+    updateDisplay();
 }
 
-int revCount = 0;
+unsigned long lastDisplayUpdate = 0;
 
 void loop() {
-    // Simple demo: rotate one revolution clockwise, then counter-clockwise
-    updateDisplay("CW", revCount);
-    stepMotor(STEPS_PER_REV);  // One full revolution clockwise
-    revCount++;
+    // Step motor continuously
+    stepMotor(1);
 
-    delay(500);
-
-    updateDisplay("CCW", revCount);
-    stepMotor(-STEPS_PER_REV); // One full revolution counter-clockwise
-    revCount++;
-
-    delay(500);
+    // Update display every 100ms
+    if (millis() - lastDisplayUpdate > 100) {
+        updateDisplay();
+        lastDisplayUpdate = millis();
+    }
 }
