@@ -17,8 +17,8 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 #define IN4 10
 
 // 28BYJ-48 stepper: 4096 steps per revolution (half-step mode)
-const int STEPS_PER_REV = 4096;
-int stepDelay = 0; // ms between steps - using delayMicroseconds instead
+#define STEPS_PER_REV 4096
+#define STEP_INTERVAL_US 800  // microseconds between steps
 
 // Half-step sequence for smoother operation
 const int stepSequence[8][4] = {
@@ -32,42 +32,48 @@ const int stepSequence[8][4] = {
     {1, 0, 0, 1}
 };
 
-int currentStep = 0;
-long totalSteps = 0;
+// Volatile variables shared with interrupt
+volatile int currentStep = 0;
+volatile long totalSteps = 0;
+volatile bool motorRunning = true;
 
-void setStep(int step) {
-    digitalWrite(IN1, stepSequence[step][0]);
-    digitalWrite(IN2, stepSequence[step][1]);
-    digitalWrite(IN3, stepSequence[step][2]);
-    digitalWrite(IN4, stepSequence[step][3]);
-}
+// Hardware timer
+hw_timer_t *timer = NULL;
 
-void stepMotor(int steps) {
-    int direction = (steps > 0) ? 1 : -1;
-    steps = abs(steps);
+// Interrupt service routine - called every STEP_INTERVAL_US
+void IRAM_ATTR onTimer() {
+    if (!motorRunning) return;
 
-    for (int i = 0; i < steps; i++) {
-        currentStep += direction;
-        if (currentStep > 7) currentStep = 0;
-        if (currentStep < 0) currentStep = 7;
-        totalSteps += direction;
+    currentStep++;
+    if (currentStep > 7) currentStep = 0;
+    totalSteps++;
 
-        setStep(currentStep);
-        delayMicroseconds(800); // 0.8ms between steps
-    }
+    // Set coil states directly (faster than digitalWrite in ISR)
+    digitalWrite(IN1, stepSequence[currentStep][0]);
+    digitalWrite(IN2, stepSequence[currentStep][1]);
+    digitalWrite(IN3, stepSequence[currentStep][2]);
+    digitalWrite(IN4, stepSequence[currentStep][3]);
 }
 
 void stopMotor() {
+    motorRunning = false;
     digitalWrite(IN1, LOW);
     digitalWrite(IN2, LOW);
     digitalWrite(IN3, LOW);
     digitalWrite(IN4, LOW);
 }
 
+void startMotor() {
+    motorRunning = true;
+}
+
 void updateDisplay() {
-    float angle = fmod((totalSteps * 360.0 / STEPS_PER_REV), 360.0);
+    // Copy volatile variables
+    long steps = totalSteps;
+
+    float angle = fmod((steps * 360.0 / STEPS_PER_REV), 360.0);
     if (angle < 0) angle += 360;
-    long revolutions = totalSteps / STEPS_PER_REV;
+    long revolutions = steps / STEPS_PER_REV;
 
     display.clearDisplay();
     display.setTextSize(1);
@@ -103,19 +109,19 @@ void setup() {
     display.display();
 
     Serial.println("Stepper motor ready!");
-
     updateDisplay();
+
+    // Set up hardware timer
+    // Timer 0, prescaler 80 (1MHz tick = 1us per tick)
+    timer = timerBegin(1000000);  // 1MHz frequency
+    timerAttachInterrupt(timer, &onTimer);
+    timerAlarm(timer, STEP_INTERVAL_US, true, 0);  // alarm every STEP_INTERVAL_US, auto-reload
+
+    startMotor();
 }
 
-unsigned long lastDisplayUpdate = 0;
-
 void loop() {
-    // Step motor continuously
-    stepMotor(1);
-
-    // Update display every 100ms
-    if (millis() - lastDisplayUpdate > 100) {
-        updateDisplay();
-        lastDisplayUpdate = millis();
-    }
+    // Just update display - motor runs independently via interrupt
+    updateDisplay();
+    delay(100);
 }
