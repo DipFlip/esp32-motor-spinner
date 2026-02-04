@@ -16,9 +16,12 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 #define IN3 9
 #define IN4 10
 
+// Hall sensor pin
+#define HALL_PIN 4
+
 // 28BYJ-48 stepper: 4096 steps per revolution (half-step mode)
 #define STEPS_PER_REV 4096
-#define STEP_INTERVAL_US 800  // microseconds between steps
+#define STEP_INTERVAL_US 1000  // microseconds between steps
 
 // Half-step sequence for smoother operation
 const int stepSequence[8][4] = {
@@ -36,6 +39,10 @@ const int stepSequence[8][4] = {
 volatile int currentStep = 0;
 volatile long totalSteps = 0;
 volatile bool motorRunning = true;
+
+// Hall sensor tracking
+long magnetCount = 0;
+bool lastMagnetState = false;
 
 // Hardware timer
 hw_timer_t *timer = NULL;
@@ -78,12 +85,15 @@ void updateDisplay() {
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
-    display.setCursor(32, 28);
+    display.setCursor(32, 20);
     display.print("Angle: ");
     display.print(angle, 1);
-    display.setCursor(32, 40);
+    display.setCursor(32, 32);
     display.print("Revs:  ");
     display.print(revolutions);
+    display.setCursor(32, 44);
+    display.print("Passes: ");
+    display.print(magnetCount);
     display.display();
 }
 
@@ -96,6 +106,9 @@ void setup() {
     pinMode(IN3, OUTPUT);
     pinMode(IN4, OUTPUT);
     stopMotor();
+
+    // Initialize hall sensor
+    pinMode(HALL_PIN, INPUT);
 
     // Initialize I2C for OLED
     Wire.begin(OLED_SDA, OLED_SCL);
@@ -121,7 +134,16 @@ void setup() {
 }
 
 void loop() {
-    // Just update display - motor runs independently via interrupt
+    // Check hall sensor (active LOW)
+    bool magnetDetected = (digitalRead(HALL_PIN) == LOW);
+
+    // Count rising edge (magnet just arrived)
+    if (magnetDetected && !lastMagnetState) {
+        magnetCount++;
+    }
+    lastMagnetState = magnetDetected;
+
+    // Update display - motor runs independently via interrupt
     updateDisplay();
     delay(100);
 }
